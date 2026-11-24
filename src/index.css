@@ -1,0 +1,117 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --font-sans: 'Vazirmatn', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', 'Vazirmatn', monospace;
+
+  /* 60-30-10 Calm Minimal Palette — Light Mode */
+  --bg-canvas: #f9faf8;
+  --bg-surface: #ffffff;
+  --bg-surface-muted: #f2f4f1;
+  --bg-surface-hover: #eaede8;
+
+  --border-subtle: #e3e7e1;
+  --border-strong: #cdd3ca;
+
+  --text-primary: #18201b;
+  --text-secondary: #4e5a52;
+  --text-muted: #76837a;
+
+  /* Primary: Natural Sage Green */
+  --color-primary: #2f6f4e;
+  --color-primary-hover: #255a3e;
+  --color-primary-foreground: #ffffff;
+  --color-primary-subtle: #eaf3ee;
+
+  /* Accent: Soft Calm Blue */
+  --color-accent: #3d6f8e;
+  --color-accent-subtle: #edf4f8;
+
+  /* Semantic Status Colors */
+  --color-success: #16a34a;
+  --color-success-subtle: #eaf7ef;
+  --color-warning: #c27803;
+  --color-warning-subtle: #fef7e6;
+  --color-error: #c83e3b;
+  --color-error-subtle: #fdf0ef;
+
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+}
+
+.dark {
+  /* Calm Minimal Palette — Dark Mode */
+  --bg-canvas: #0f1412;
+  --bg-surface: #161d1a;
+  --bg-surface-muted: #1d2622;
+  --bg-surface-hover: #25302b;
+
+  --border-subtle: #28332d;
+  --border-strong: #37453e;
+
+  --text-primary: #eef2ef;
+  --text-secondary: #b2beb7;
+  --text-muted: #829088;
+
+  --color-primary: #4b9b70;
+  --color-primary-hover: #5cae81;
+  --color-primary-foreground: #0b1610;
+  --color-primary-subtle: #193125;
+
+  --color-accent: #68a1c4;
+  --color-accent-subtle: #182b36;
+
+  --color-success: #34c769;
+  --color-success-subtle: #132c1d;
+  --color-warning: #e59f24;
+  --color-warning-subtle: #2c2211;
+  --color-error: #e36562;
+  --color-error-subtle: #311717;
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    background-color: var(--bg-canvas);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--bg-canvas);
+    color: var(--text-primary);
+    overflow-x: hidden;
+  }
+
+  .dark body {
+    letter-spacing: 0.005em;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.text-balance {
+  text-wrap: balance;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

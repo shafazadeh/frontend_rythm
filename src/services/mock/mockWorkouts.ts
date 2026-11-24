@@ -1,0 +1,1067 @@
+import {
+  CardioIntensity,
+  DifficultyLevel,
+  Exercise,
+  ExerciseCategory,
+  ExerciseType,
+  MetReferenceEntry,
+  WorkoutActivityLog,
+  WorkoutGoal,
+  WorkoutPreferences,
+  WorkoutProgram,
+  WorkoutSession,
+  WorkoutSessionExercise,
+  WorkoutSessionStatus,
+  WorkoutTemplate,
+} from '../../shared/types/workout';
+import {
+  addDaysToISO,
+  getNextSaturdayToFridayWeekRange,
+  getPersianDayIndexFromISO,
+  getSaturdayToFridayWeekRange,
+} from '../domain/jalaliCalendar';
+import { estimateWorkoutSessionCalories } from '../domain/workoutCalorieCalculator';
+
+export const DEFAULT_MET_REFERENCE_TABLE: MetReferenceEntry[] = [
+  {
+    id: 'met_str_light',
+    exerciseType: ExerciseType.STRENGTH,
+    intensity: CardioIntensity.LIGHT,
+    label: 'تمرین قدرتی سبک',
+    metValue: 3.5,
+    description: 'تمرین مقاومتی با وزنه سبک و استراحت طولانی',
+  },
+  {
+    id: 'met_str_mod',
+    exerciseType: ExerciseType.STRENGTH,
+    intensity: CardioIntensity.MODERATE,
+    label: 'تمرین قدرتی متوسط',
+    metValue: 5.0,
+    description: 'بدنسازی استاندارد با ست‌ها و استراحت متعادل',
+  },
+  {
+    id: 'met_str_vig',
+    exerciseType: ExerciseType.STRENGTH,
+    intensity: CardioIntensity.VIGOROUS,
+    label: 'تمرین قدرتی پرفشار',
+    metValue: 6.5,
+    description: 'تمرین مقاومتی سنگین یا سوپرست با شدت بالا',
+  },
+  {
+    id: 'met_car_light',
+    exerciseType: ExerciseType.CARDIO,
+    intensity: CardioIntensity.LIGHT,
+    label: 'هوازی سبک (پیاده‌روی)',
+    metValue: 3.8,
+    description: 'پیاده‌روی ملایم یا دوچرخه‌سواری آرام',
+  },
+  {
+    id: 'met_car_mod',
+    exerciseType: ExerciseType.CARDIO,
+    intensity: CardioIntensity.MODERATE,
+    label: 'هوازی متوسط (دویدن آرام/الپتیکال)',
+    metValue: 7.0,
+    description: 'دویدن ملایم، دوچرخه متوسط یا الپتیکال',
+  },
+  {
+    id: 'met_car_vig',
+    exerciseType: ExerciseType.CARDIO,
+    intensity: CardioIntensity.VIGOROUS,
+    label: 'هوازی شدید (HIIT/طناب/دو سریع)',
+    metValue: 9.5,
+    description: 'اینتروال پرفشار، طناب‌زدن مداوم یا دویدن تند',
+  },
+  {
+    id: 'met_str_flex',
+    exerciseType: ExerciseType.STRETCHING,
+    intensity: CardioIntensity.LIGHT,
+    label: 'حرکات کششی',
+    metValue: 2.3,
+    description: 'کشش ایستا و ریلکسیشن عضلانی',
+  },
+  {
+    id: 'met_mob_mod',
+    exerciseType: ExerciseType.MOBILITY,
+    intensity: CardioIntensity.MODERATE,
+    label: 'تمرینات تحرک‌پذیری (Mobility)',
+    metValue: 2.8,
+    description: 'دامنه حرکتی مفاصل و روان‌سازی حرکتی',
+  },
+  {
+    id: 'met_bal_mod',
+    exerciseType: ExerciseType.BALANCE,
+    intensity: CardioIntensity.MODERATE,
+    label: 'تمرینات تعادلی و ثبات',
+    metValue: 2.5,
+    description: 'کنترل تعادل، ثبات لگن و میان‌تنه',
+  },
+];
+
+export const MOCK_EXERCISE_CATEGORIES: ExerciseCategory[] = [
+  { id: 'ex_cat_strength', name: 'قدرتی', type: ExerciseType.STRENGTH, order: 1, isActive: true },
+  { id: 'ex_cat_cardio', name: 'هوازی', type: ExerciseType.CARDIO, order: 2, isActive: true },
+  { id: 'ex_cat_stretch', name: 'کششی', type: ExerciseType.STRETCHING, order: 3, isActive: true },
+  { id: 'ex_cat_mobility', name: 'تحرک‌پذیری (Mobility)', type: ExerciseType.MOBILITY, order: 4, isActive: true },
+  { id: 'ex_cat_balance', name: 'تعادلی', type: ExerciseType.BALANCE, order: 5, isActive: true },
+];
+
+export function createMockExercises(nowISO: string): Exercise[] {
+  const base = { isActive: true, createdAt: nowISO, updatedAt: nowISO };
+  return [
+    // Strength (11)
+    {
+      ...base,
+      id: 'ex_squat_barbell',
+      persianName: 'اسکوات با هالتر',
+      englishName: 'Barbell Back Squat',
+      type: ExerciseType.STRENGTH,
+      categoryId: 'ex_cat_strength',
+      targetMuscleGroups: ['چهارسر ران', 'باسن', 'میان‌تنه (شکم)'],
+      difficulty: DifficultyLevel.INTERMEDIATE,
+      equipment: ['هالتر'],
+      instructions: 'پاها به عرض شانه، سینه صاف و با کنترل تا موازی شدن ران با زمین پایین بیایید و با فشار پاشنه بالا برگردید.',
+      safetyNotes: 'از قوس بیش از حد کمر و جمع شدن زانوها به داخل جلوگیری کنید.',
+      defaultMet: 5.5,
+    },
+    {
+      ...base,
+      id: 'ex_dumbbell_bench',
+      persianName: 'پرس سینه با دمبل',
+      englishName: 'Dumbbell Bench Press',
+      type: ExerciseType.STRENGTH,
+      categoryId: 'ex_cat_strength',
+      targetMuscleGroups: ['سینه', 'سرشانه', 'پشت‌بازو'],
+      difficulty: DifficultyLevel.BEGINNER,
+      equipment: ['دمبل'],
+      instructions: 'روی نیمکت صاف دراز بکشید، دمبل‌ها را با کنترل تا کنار سینه پایین بیاورید و به سمت بالا پرس کنید.',
+      safetyNotes: 'آرنج‌ها را با زاویه حدود ۴۵ درجه نسبت به تنه نگه دارید.',
+      defaultMet: 5.0,
+    },
+    {
+      ...base,
+      id: 'ex_romanian_deadlift',
+      persianName: 'ددلیفت رومانیایی دمبل',
+      englishName: 'Dumbbell Romanian Deadlift',
+      type: ExerciseType.STRENGTH,
+      categoryId: 'ex_cat_strength',
+      targetMuscleGroups: ['همسترینگ', 'باسن', 'پشت و زیربغل'],
+      difficulty: DifficultyLevel.INTERMEDIATE,
+      equipment: ['دمبل'],
+      instructions: 'با زانوی کمی خم و کمر کاملاً صاف، لگن را به عقب ببرید تا کشش در همسترینگ حس شود، سپس با انقباض باسن بازگردید.',
+      safetyNotes: 'ستون فقرات در تمام مسیر خنثی بماند و دمبل‌ها نزدیک پا حرکت کنند.',
+      defaultMet: 5.2,
+    },
+    {
+      ...base,
+      id: 'ex_seated_row',
+      persianName: 'زیربغل قایقی سیم‌کش',
+      englishName: 'Seated Cable Row',
+      type: ExerciseType.STRENGTH,
+      categoryId: 'ex_cat_strength',
+      targetMuscleGroups: ['پشت و زیربغل', 'جلوبازو'],
+      difficulty: DifficultyLevel.BEGINNER,
+      equipment: ['دستگاه سیم‌کش'],
+      instructions: 'با تنه ثابت، دسته را به سمت شکم بکشید و کتف‌ها را به هم نزدیک کنید، سپس با کنترل رها کنید.',
+      safetyNotes: 'از تاب دادن کمر برای کشیدن وزنه سنگین خودداری کنید.',
+      defaultMet: 4.8,
+    },
+    {
+      ...base,
+      id: 'ex_shoulder_press',
+      persianName: 'پرس سرشانه دمبل نشسته',
+      englishName: 'Seated Dumbbell Shoulder Press',
+      type: ExerciseType.STRENGTH,
+      categoryId: 'ex_cat_strength',
+      targetMuscleGroups: ['سرشانه', 'پشت‌بازو'],
+      difficulty: DifficultyLevel.BEGINNER,
+      equipment: ['دمبل'],
+      instructions: 'دمبل‌ها را هم‌سطح گوش نگه دارید و به‌صورت عمودی بالای سر پرس کنید.',
+      safetyNotes: 'شکم را منقبض نگه دارید تا کمر قوس اضافه نگیرد.',
+      defaultMet: 4.8,
+    },
+    {
+      ...base,
+      id: 'ex_pushup',
+      persianName: 'شنا سوئدی',
+      englishName: 'Push-Up',
+      type: ExerciseType.STRENGTH,
+      categoryId: 'ex_cat_strength',
+      targetMuscleGroups: ['سینه', 'سرشانه', 'پشت‌بازو', 'میان‌تنه (شکم)'],
+      difficulty: DifficultyLevel.BEGINNER,
+      equipment: ['بدون وسیله (وزن بدن)'],
+      instructions: 'بدن در یک خط مستقیم باشد، سینه را تا نزدیکی زمین پایین ببرید و با فشار کف دست بالا بیایید.',
+      safetyNotes: 'لگن نباید به سمت زمین بیفتد یا بیش از حد بالا برود.',
+      defaultMet: 4.5,
+    },
+    {
+      ...base,
+      id: 'ex_lat_pulldown',
+      persianName: 'زیربغل سیم‌کش از جلو',
+      englishName: 'Lat Pulldown',
+      type: ExerciseType.STRENGTH,
+      categoryId: 'ex_cat_strength',
+      targetMuscleGroups: ['پشت و زیربغل', 'جلوبازو'],
+      difficulty: DifficultyLevel.BEGINNER,
+      equipment: ['دستگاه سیم‌کش'],
+      instructions: 'میله را کمی بازتر از عرض شانه بگیرید و تا بالای سینه پایین بکشید.',
+      safetyNotes: 'میله را پشت گردن نکشید تا به مفصل شانه فشار نیاید.',
+      defaultMet: 4.6,
+    },
+    {
+      ...base,
+      id: 'ex_walking_lunge',
+      persianName: 'لانج با دمبل',
+      englishName: 'Dumbbell Lunge',
+      type: ExerciseType.STRENGTH,
+      categoryId: 'ex_cat_strength',
+      targetMuscleGroups: ['چهارسر ران', 'باسن', 'همسترینگ'],
+      difficulty: DifficultyLevel.INTERMEDIATE,
+      equipment: ['دمبل'],
+      instructions: 'یک گام به جلو بردارید و هر دو زانو را تا حدود ۹۰ درجه خم کنید، سپس به حالت ایستاده برگردید.',
+      safetyNotes: 'زانوی جلو از پنجه پا عبور شدید نکند و تنه عمودی بماند.',
+      defaultMet: 5.3,
+    },
+    {
+      ...base,
+      id: 'ex_bicep_curl',
+      persianName: 'جلوبازو دمبل ایستاده',
+      englishName: 'Dumbbell Bicep Curl',
+      type: ExerciseType.STRENGTH,
+      categoryId: 'ex_cat_strength',
+      targetMuscleGroups: ['جلوبازو'],
+      difficulty: DifficultyLevel.BEGINNER,
+      equipment: ['دمبل'],
+      instructions: 'آرنج‌ها را کنار بدن ثابت نگه دارید و دمبل‌ها را با کنترل بالا بیاورید و پایین ببرید.',
+      safetyNotes: 'از تاب دادن شانه‌ها و حرکت آرنج به جلو جلوگیری کنید.',
+      defaultMet: 4.0,
+    },
+    {
+      ...base,
+      id: 'ex_plank',
+      persianName: 'پلانک ساعد',
+      englishName: 'Forearm Plank',
+      type: ExerciseType.STRENGTH,
+      categoryId: 'ex_cat_strength',
+      targetMuscleGroups: ['میان‌تنه (شکم)', 'سرشانه'],
+      difficulty: DifficultyLevel.BEGINNER,
+      equipment: ['مت ورزشی', 'بدون وسیله (وزن بدن)'],
+      instructions: 'روی ساعد و پنجه پا قرار بگیرید، عضلات شکم و باسن را منقبض کرده و بدن را در یک خط صاف نگه دارید.',
+      safetyNotes: 'نفس کشیدن منظم را قطع نکنید و در صورت درد کمر متوقف شوید.',
+      defaultMet: 3.8,
+    },
+    {
+      ...base,
+      id: 'ex_glute_bridge',
+      persianName: 'پل باسن',
+      englishName: 'Glute Bridge',
+      type: ExerciseType.STRENGTH,
+      categoryId: 'ex_cat_strength',
+      targetMuscleGroups: ['باسن', 'همسترینگ', 'میان‌تنه (شکم)'],
+      difficulty: DifficultyLevel.BEGINNER,
+      equipment: ['مت ورزشی', 'بدون وسیله (وزن بدن)'],
+      instructions: 'به پشت دراز بکشید، زانوها خم باشند، لگن را با فشار پاشنه بالا ببرید تا خط صاف از شانه تا زانو ساخته شود.',
+      safetyNotes: 'بالا بردن لگن با انقباض باسن انجام شود نه قوس دادن کمر.',
+      defaultMet: 3.8,
+    },
+
+    // Cardio (6)
+    {
+      ...base,
+      id: 'ex_brisk_walk',
+      persianName: 'پیاده‌روی تند',
+      englishName: 'Brisk Walking',
+      type: ExerciseType.CARDIO,
+      categoryId: 'ex_cat_cardio',
+      targetMuscleGroups: ['کل بدن', 'چهارسر ران', 'ساق پا'],
+      difficulty: DifficultyLevel.BEGINNER,
+      equipment: ['بدون وسیله (وزن بدن)', 'تردمیل'],
+      instructions: 'با گام‌های منظم و تاب دادن طبیعی دست‌ها با سرعت متوسط رو به بالا حرکت کنید.',
+      safetyNotes: 'کفش ورزشی مناسب بپوشید و در ۵ دقیقه اول با سرعت آرام گرم کنید.',
+      defaultMet: 4.3,
+    },
+    {
+      ...base,
+      id: 'ex_treadmill_jog',
+      persianName: 'دویدن ملایم روی تردمیل',
+      englishName: 'Treadmill Jogging',
+      type: ExerciseType.CARDIO,
+      categoryId: 'ex_cat_cardio',
+      targetMuscleGroups: ['کل بدن', 'چهارسر ران', 'ساق پا'],
+      difficulty: DifficultyLevel.INTERMEDIATE,
+      equipment: ['تردمیل'],
+      instructions: 'با گام‌های کوتاه و فرود نرم روی میانه پا با ریتم تنفس یکنواخت بدوید.',
+      safetyNotes: 'ابتدا ۳ تا ۵ دقیقه پیاده‌روی گرم‌کردن و در پایان سرد کردن انجام دهید.',
+      defaultMet: 7.5,
+    },
+    {
+      ...base,
+      id: 'ex_stationary_bike',
+      persianName: 'دوچرخه ثابت',
+      englishName: 'Stationary Cycling',
+      type: ExerciseType.CARDIO,
+      categoryId: 'ex_cat_cardio',
+      targetMuscleGroups: ['چهارسر ران', 'همسترینگ', 'ساق پا'],
+      difficulty: DifficultyLevel.BEGINNER,
+      equipment: ['دوچرخه ثابت'],
+      instructions: 'ارتفاع زین را هم‌تراز استخوان لگن تنظیم کنید و با دور پای پیوسته رکاب بزنید.',
+      safetyNotes: 'در پایین‌ترین نقطه رکاب، زانو باید حدود ۱۰ تا ۱۵ درجه خم بماند.',
+      defaultMet: 6.8,
+    },
+    {
+      ...base,
+      id: 'ex_elliptical',
+      persianName: 'تمرین با الپتیکال',
+      englishName: 'Elliptical Trainer',
+      type: ExerciseType.CARDIO,
+      categoryId: 'ex_cat_cardio',
+      targetMuscleGroups: ['کل بدن', 'چهارسر ران', 'باسن'],
+      difficulty: DifficultyLevel.BEGINNER,
+      equipment: ['الپتیکال'],
+      instructions: 'با درگیر کردن هم‌زمان دستگیره‌ها و پاها و کمر صاف حرکت پیوسته انجام دهید.',
+      safetyNotes: 'پاشنه پا را روی پدال ثابت نگه دارید تا فشار به پنجه و زانو نیاید.',
+      defaultMet: 6.5,
+    },
+    {
+      ...base,
+      id: 'ex_jump_rope',
+      persianName: 'طناب‌زدن متناوب',
+      englishName: 'Jump Rope Intervals',
+      type: ExerciseType.CARDIO,
+      categoryId: 'ex_cat_cardio',
+      targetMuscleGroups: ['کل بدن', 'ساق پا', 'سرشانه'],
+      difficulty: DifficultyLevel.INTERMEDIATE,
+      equipment: ['طناب ورزشی'],
+      instructions: 'با چرخش مچ دست و پرش کوتاه روی پنجه پا در بازه‌های ۳۰ تا ۴۵ ثانیه‌ای طناب بزنید.',
+      safetyNotes: 'روی سطح دارای ضربه‌گیر تمرین کنید و از پرش بیش از حد بلند پرهیز کنید.',
+      defaultMet: 9.8,
+    },
+    {
+      ...base,
+      id: 'ex_hiit_circuit',
+      persianName: 'اینتروال هوازی بدون وسیله (HIIT)',
+      englishName: 'Bodyweight HIIT Circuit',
+      type: ExerciseType.CARDIO,
+      categoryId: 'ex_cat_cardio',
+      targetMuscleGroups: ['کل بدن', 'میان‌تنه (شکم)'],
+      difficulty: DifficultyLevel.ADVANCED,
+      equipment: ['بدون وسیله (وزن بدن)', 'مت ورزشی'],
+      instructions: 'ترکیب متناوب پروانه، زانو بلند و کوهنورد به صورت ۴۰ ثانیه کار و ۲۰ ثانیه استراحت.',
+      safetyNotes: 'در صورت سرگیجه یا افت شدید کنترل فرم حرکت، شدت را کاهش دهید.',
+      defaultMet: 8.8,
+    },
+
+    // Stretching (3)
+    {
+      ...base,
+      id: 'ex_hamstring_stretch',
+      persianName: 'کشش ایستا همسترینگ',
+      englishName: 'Seated Hamstring Stretch',
+      type: ExerciseType.STRETCHING,
+      categoryId: 'ex_cat_stretch',
+      targetMuscleGroups: ['همسترینگ'],
+      difficulty: DifficultyLevel.BEGINNER,
+      equipment: ['مت ورزشی', 'بدون وسیله (وزن بدن)'],
+      instructions: 'روی مت بنشینید، یک پا را صاف دراز کنید و با کمر صاف به آرامی به سمت جلو متمایل شوید.',
+      safetyNotes: 'کشش باید ملایم باشد؛ از جهش دادن بدن برای خم شدن بیشتر خودداری کنید.',
+      defaultMet: 2.3,
+    },
+    {
+      ...base,
+      id: 'ex_chest_doorway_stretch',
+      persianName: 'کشش سینه و شانه',
+      englishName: 'Chest & Shoulder Stretch',
+      type: ExerciseType.STRETCHING,
+      categoryId: 'ex_cat_stretch',
+      targetMuscleGroups: ['سینه', 'سرشانه'],
+      difficulty: DifficultyLevel.BEGINNER,
+      equipment: ['بدون وسیله (وزن بدن)'],
+      instructions: 'دست‌ها را پشت بدن قفل کرده یا کنار چارچوب در قرار دهید و قفسه سینه را به آرامی باز کنید.',
+      safetyNotes: 'در صورت احساس سوزش در مفصل شانه دامنه کشش را کمتر کنید.',
+      defaultMet: 2.2,
+    },
+    {
+      ...base,
+      id: 'ex_child_pose',
+      persianName: 'کشش کمر و پشت (حالت کودک)',
+      englishName: 'Child Pose Stretch',
+      type: ExerciseType.STRETCHING,
+      categoryId: 'ex_cat_stretch',
+      targetMuscleGroups: ['پشت و زیربغل', 'ستون فقرات و لگن'],
+      difficulty: DifficultyLevel.BEGINNER,
+      equipment: ['مت ورزشی'],
+      instructions: 'روی زانو بنشینید، دست‌ها را به جلو دراز کرده و پیشانی را روی مت بگذارید و عمیق نفس بکشید.',
+      safetyNotes: 'در صورت حساسیت زانو، حوله تاشده زیر زانو قرار دهید.',
+      defaultMet: 2.0,
+    },
+
+    // Mobility (2)
+    {
+      ...base,
+      id: 'ex_cat_cow',
+      persianName: 'تحرک ستون فقرات (گربه-گاو)',
+      englishName: 'Cat-Cow Mobility',
+      type: ExerciseType.MOBILITY,
+      categoryId: 'ex_cat_mobility',
+      targetMuscleGroups: ['ستون فقرات و لگن', 'میان‌تنه (شکم)'],
+      difficulty: DifficultyLevel.BEGINNER,
+      equipment: ['مت ورزشی'],
+      instructions: 'در حالت چهار دست‌وپا، هم‌زمان با دم کمر را گود و با بازدم ستون فقرات را گرد کنید.',
+      safetyNotes: 'حرکت را آرام و هماهنگ با تنفس انجام دهید.',
+      defaultMet: 2.6,
+    },
+    {
+      ...base,
+      id: 'ex_hip_90_90',
+      persianName: 'تحرک‌پذیری مفصل ران (۹۰-۹۰)',
+      englishName: '90-90 Hip Mobility',
+      type: ExerciseType.MOBILITY,
+      categoryId: 'ex_cat_mobility',
+      targetMuscleGroups: ['ستون فقرات و لگن', 'باسن'],
+      difficulty: DifficultyLevel.BEGINNER,
+      equipment: ['مت ورزشی'],
+      instructions: 'روی مت با زاویه ۹۰ درجه هر دو زانو بنشینید و لگن را به آرامی از یک سمت به سمت دیگر بچرخانید.',
+      safetyNotes: 'در صورت سفتی لگن، دست‌ها را پشت بدن برای حمایت روی زمین بگذارید.',
+      defaultMet: 2.8,
+    },
+
+    // Balance (2)
+    {
+      ...base,
+      id: 'ex_single_leg_balance',
+      persianName: 'ایستادن تعادلی تک‌پا',
+      englishName: 'Single-Leg Balance Hold',
+      type: ExerciseType.BALANCE,
+      categoryId: 'ex_cat_balance',
+      targetMuscleGroups: ['چهارسر ران', 'ساق پا', 'میان‌تنه (شکم)'],
+      difficulty: DifficultyLevel.BEGINNER,
+      equipment: ['بدون وسیله (وزن بدن)'],
+      instructions: 'روی یک پا بایستید، زانوی تکیه‌گاه کمی نرم باشد و نقطه ثابتی را مقابل خود نگاه کنید.',
+      safetyNotes: 'در نزدیکی دیوار یا صندلی تمرین کنید تا در صورت برهم خوردن تعادل تکیه‌گاه داشته باشید.',
+      defaultMet: 2.4,
+    },
+    {
+      ...base,
+      id: 'ex_bird_dog',
+      persianName: 'تعادل دست و پای مخالف (Bird-Dog)',
+      englishName: 'Bird-Dog Stability',
+      type: ExerciseType.BALANCE,
+      categoryId: 'ex_cat_balance',
+      targetMuscleGroups: ['میان‌تنه (شکم)', 'ستون فقرات و لگن', 'باسن'],
+      difficulty: DifficultyLevel.BEGINNER,
+      equipment: ['مت ورزشی'],
+      instructions: 'در حالت چهار دست‌وپا، دست راست و پای چپ را هم‌زمان موازی با زمین باز کرده و ۳ ثانیه مکث کنید.',
+      safetyNotes: 'از چرخش لگن و گود شدن کمر هنگام کشیدن پا جلوگیری کنید.',
+      defaultMet: 2.9,
+    },
+  ];
+}
+
+export function templateExercisesToSessionExercises(
+  templateExercises: WorkoutTemplate['exercises']
+): WorkoutSessionExercise[] {
+  return templateExercises.map((te) => {
+    if (te.exerciseType === ExerciseType.STRENGTH) {
+      const setsCount = te.sets ?? 3;
+      return {
+        id: `sex_${te.id}_${Math.random().toString(36).slice(2, 6)}`,
+        exerciseId: te.exerciseId,
+        order: te.order,
+        exerciseType: te.exerciseType,
+        restSeconds: te.restSeconds ?? 60,
+        sets: Array.from({ length: setsCount }, (_, i) => ({
+          id: `set_${te.id}_${i + 1}`,
+          setNumber: i + 1,
+          targetReps: te.reps ?? 10,
+          targetWeightKg: te.targetWeightKg,
+          actualReps: te.reps ?? 10,
+          actualWeightKg: te.targetWeightKg,
+          isCompleted: false,
+        })),
+        isCompleted: false,
+        notes: te.notes,
+      };
+    }
+
+    if (te.exerciseType === ExerciseType.CARDIO) {
+      return {
+        id: `sex_${te.id}_${Math.random().toString(36).slice(2, 6)}`,
+        exerciseId: te.exerciseId,
+        order: te.order,
+        exerciseType: te.exerciseType,
+        sets: [],
+        targetDurationMinutes: te.durationMinutes ?? 25,
+        actualDurationMinutes: te.durationMinutes ?? 25,
+        targetIntensity: te.intensity ?? CardioIntensity.MODERATE,
+        targetDistanceKm: te.targetDistanceKm,
+        actualDistanceKm: te.targetDistanceKm,
+        targetSpeedKmh: te.targetSpeedKmh,
+        isCompleted: false,
+        notes: te.notes,
+      };
+    }
+
+    return {
+      id: `sex_${te.id}_${Math.random().toString(36).slice(2, 6)}`,
+      exerciseId: te.exerciseId,
+      order: te.order,
+      exerciseType: te.exerciseType,
+      sets: [],
+      targetSetsCount: te.sets ?? 2,
+      targetRepsCount: te.reps ?? 8,
+      holdSeconds: te.holdSeconds ?? 30,
+      isCompleted: false,
+      notes: te.notes,
+    };
+  });
+}
+
+export function buildInitialWorkoutMockData(referenceDate = new Date('2026-11-19T10:30:00+03:30')) {
+  const nowISO = referenceDate.toISOString();
+  const refISO = nowISO.slice(0, 10);
+  const currentWeek = getSaturdayToFridayWeekRange(refISO);
+  const nextWeek = getNextSaturdayToFridayWeekRange(refISO);
+  const prevWeekStart = addDaysToISO(currentWeek.weekStartISO, -7);
+
+  const exercises = createMockExercises(nowISO);
+  const exercisesById = Object.fromEntries(exercises.map((e) => [e.id, e]));
+
+  const templates: WorkoutTemplate[] = [
+    // Program 1: Three-day strength (upper, lower, full-body/cardio)
+    {
+      id: 'wtpl_upper_1',
+      programId: 'wprog_strength_3d',
+      title: 'جلسه اول: بالاتنه و میان‌تنه',
+      type: ExerciseType.STRENGTH,
+      estimatedDurationMinutes: 45,
+      difficulty: DifficultyLevel.INTERMEDIATE,
+      exercises: [
+        {
+          id: 'wte_1',
+          exerciseId: 'ex_dumbbell_bench',
+          order: 1,
+          exerciseType: ExerciseType.STRENGTH,
+          sets: 3,
+          reps: 10,
+          targetWeightKg: 14,
+          restSeconds: 75,
+        },
+        {
+          id: 'wte_2',
+          exerciseId: 'ex_seated_row',
+          order: 2,
+          exerciseType: ExerciseType.STRENGTH,
+          sets: 3,
+          reps: 12,
+          targetWeightKg: 30,
+          restSeconds: 60,
+        },
+        {
+          id: 'wte_3',
+          exerciseId: 'ex_shoulder_press',
+          order: 3,
+          exerciseType: ExerciseType.STRENGTH,
+          sets: 3,
+          reps: 10,
+          targetWeightKg: 10,
+          restSeconds: 60,
+        },
+        {
+          id: 'wte_4',
+          exerciseId: 'ex_bicep_curl',
+          order: 4,
+          exerciseType: ExerciseType.STRENGTH,
+          sets: 3,
+          reps: 12,
+          targetWeightKg: 8,
+          restSeconds: 45,
+        },
+        {
+          id: 'wte_5',
+          exerciseId: 'ex_plank',
+          order: 5,
+          exerciseType: ExerciseType.STRENGTH,
+          sets: 3,
+          reps: 40,
+          restSeconds: 45,
+          notes: 'هر ست حدود ۴۰ ثانیه حفظ فرم',
+        },
+      ],
+      createdAt: nowISO,
+      updatedAt: nowISO,
+    },
+    {
+      id: 'wtpl_lower_2',
+      programId: 'wprog_strength_3d',
+      title: 'جلسه دوم: پایین‌تنه و پایدارکننده',
+      type: ExerciseType.STRENGTH,
+      estimatedDurationMinutes: 50,
+      difficulty: DifficultyLevel.INTERMEDIATE,
+      exercises: [
+        {
+          id: 'wte_6',
+          exerciseId: 'ex_squat_barbell',
+          order: 1,
+          exerciseType: ExerciseType.STRENGTH,
+          sets: 4,
+          reps: 8,
+          targetWeightKg: 40,
+          restSeconds: 90,
+        },
+        {
+          id: 'wte_7',
+          exerciseId: 'ex_romanian_deadlift',
+          order: 2,
+          exerciseType: ExerciseType.STRENGTH,
+          sets: 3,
+          reps: 10,
+          targetWeightKg: 16,
+          restSeconds: 75,
+        },
+        {
+          id: 'wte_8',
+          exerciseId: 'ex_walking_lunge',
+          order: 3,
+          exerciseType: ExerciseType.STRENGTH,
+          sets: 3,
+          reps: 10,
+          targetWeightKg: 10,
+          restSeconds: 60,
+        },
+        {
+          id: 'wte_9',
+          exerciseId: 'ex_glute_bridge',
+          order: 4,
+          exerciseType: ExerciseType.STRENGTH,
+          sets: 3,
+          reps: 15,
+          restSeconds: 45,
+        },
+      ],
+      createdAt: nowISO,
+      updatedAt: nowISO,
+    },
+    {
+      id: 'wtpl_full_cardio_3',
+      programId: 'wprog_strength_3d',
+      title: 'جلسه سوم: کل بدن و هوازی تکمیلی',
+      type: ExerciseType.STRENGTH,
+      estimatedDurationMinutes: 40,
+      difficulty: DifficultyLevel.BEGINNER,
+      exercises: [
+        {
+          id: 'wte_10',
+          exerciseId: 'ex_pushup',
+          order: 1,
+          exerciseType: ExerciseType.STRENGTH,
+          sets: 3,
+          reps: 12,
+          restSeconds: 60,
+        },
+        {
+          id: 'wte_11',
+          exerciseId: 'ex_lat_pulldown',
+          order: 2,
+          exerciseType: ExerciseType.STRENGTH,
+          sets: 3,
+          reps: 12,
+          targetWeightKg: 35,
+          restSeconds: 60,
+        },
+        {
+          id: 'wte_12',
+          exerciseId: 'ex_stationary_bike',
+          order: 3,
+          exerciseType: ExerciseType.CARDIO,
+          durationMinutes: 20,
+          intensity: CardioIntensity.MODERATE,
+          targetDistanceKm: 7.5,
+        },
+      ],
+      createdAt: nowISO,
+      updatedAt: nowISO,
+    },
+
+    // Program 2: Endurance & Cardio
+    {
+      id: 'wtpl_cardio_steady',
+      programId: 'wprog_cardio_4d',
+      title: 'هوازی پیوسته استقامتی',
+      type: ExerciseType.CARDIO,
+      estimatedDurationMinutes: 35,
+      difficulty: DifficultyLevel.BEGINNER,
+      exercises: [
+        {
+          id: 'wte_13',
+          exerciseId: 'ex_treadmill_jog',
+          order: 1,
+          exerciseType: ExerciseType.CARDIO,
+          durationMinutes: 30,
+          intensity: CardioIntensity.MODERATE,
+          targetDistanceKm: 4.2,
+          targetSpeedKmh: 8.4,
+        },
+        {
+          id: 'wte_14',
+          exerciseId: 'ex_hamstring_stretch',
+          order: 2,
+          exerciseType: ExerciseType.STRETCHING,
+          holdSeconds: 30,
+          sets: 2,
+          reps: 2,
+        },
+      ],
+      createdAt: nowISO,
+      updatedAt: nowISO,
+    },
+    {
+      id: 'wtpl_cardio_hiit',
+      programId: 'wprog_cardio_4d',
+      title: 'اینتروال چربی‌سوزی و طناب',
+      type: ExerciseType.CARDIO,
+      estimatedDurationMinutes: 28,
+      difficulty: DifficultyLevel.INTERMEDIATE,
+      exercises: [
+        {
+          id: 'wte_15',
+          exerciseId: 'ex_jump_rope',
+          order: 1,
+          exerciseType: ExerciseType.CARDIO,
+          durationMinutes: 12,
+          intensity: CardioIntensity.VIGOROUS,
+        },
+        {
+          id: 'wte_16',
+          exerciseId: 'ex_hiit_circuit',
+          order: 2,
+          exerciseType: ExerciseType.CARDIO,
+          durationMinutes: 16,
+          intensity: CardioIntensity.VIGOROUS,
+        },
+      ],
+      createdAt: nowISO,
+      updatedAt: nowISO,
+    },
+
+    // Program 3: Morning Mobility & Stretch
+    {
+      id: 'wtpl_morning_mob',
+      programId: 'wprog_mobility_daily',
+      title: 'روتین تحرک‌پذیری و تعادل صبحگاهی',
+      type: ExerciseType.MOBILITY,
+      estimatedDurationMinutes: 20,
+      difficulty: DifficultyLevel.BEGINNER,
+      exercises: [
+        {
+          id: 'wte_17',
+          exerciseId: 'ex_cat_cow',
+          order: 1,
+          exerciseType: ExerciseType.MOBILITY,
+          holdSeconds: 20,
+          sets: 2,
+          reps: 8,
+        },
+        {
+          id: 'wte_18',
+          exerciseId: 'ex_hip_90_90',
+          order: 2,
+          exerciseType: ExerciseType.MOBILITY,
+          holdSeconds: 25,
+          sets: 2,
+          reps: 6,
+        },
+        {
+          id: 'wte_19',
+          exerciseId: 'ex_bird_dog',
+          order: 3,
+          exerciseType: ExerciseType.BALANCE,
+          holdSeconds: 15,
+          sets: 2,
+          reps: 8,
+        },
+        {
+          id: 'wte_20',
+          exerciseId: 'ex_child_pose',
+          order: 4,
+          exerciseType: ExerciseType.STRETCHING,
+          holdSeconds: 45,
+          sets: 2,
+          reps: 1,
+        },
+      ],
+      createdAt: nowISO,
+      updatedAt: nowISO,
+    },
+  ];
+
+  const programs: WorkoutProgram[] = [
+    {
+      id: 'wprog_strength_3d',
+      title: 'برنامه بدنسازی سه‌روزه پایه',
+      goal: WorkoutGoal.MUSCLE_GAIN,
+      difficulty: DifficultyLevel.INTERMEDIATE,
+      sessionsPerWeek: 3,
+      startDateISO: currentWeek.weekStartISO,
+      description: 'برنامه متعادل بالاتنه، پایین‌تنه و کل بدن با تمرکز بر فرم صحیح و پیشرفت تدریجی وزنه.',
+      templateIds: ['wtpl_upper_1', 'wtpl_lower_2', 'wtpl_full_cardio_3'],
+      isActive: true,
+      createdAt: nowISO,
+      updatedAt: nowISO,
+    },
+    {
+      id: 'wprog_cardio_4d',
+      title: 'برنامه هوازی و استقامت قلبی',
+      goal: WorkoutGoal.ENDURANCE,
+      difficulty: DifficultyLevel.BEGINNER,
+      sessionsPerWeek: 4,
+      startDateISO: currentWeek.weekStartISO,
+      description: 'ترکیب دویدن پیوسته و اینتروال کوتاه برای بهبود آمادگی هوازی.',
+      templateIds: ['wtpl_cardio_steady', 'wtpl_cardio_hiit'],
+      isActive: true,
+      createdAt: nowISO,
+      updatedAt: nowISO,
+    },
+    {
+      id: 'wprog_mobility_daily',
+      title: 'روتین تحرک‌پذیری و کشش صبحگاهی',
+      goal: WorkoutGoal.MOBILITY_FLEXIBILITY,
+      difficulty: DifficultyLevel.BEGINNER,
+      sessionsPerWeek: 3,
+      startDateISO: currentWeek.weekStartISO,
+      description: 'رفع خشکی مفاصل، تقویت تعادل و بهبود دامنه حرکتی در ۲۰ دقیقه.',
+      templateIds: ['wtpl_morning_mob'],
+      isActive: false,
+      createdAt: nowISO,
+      updatedAt: nowISO,
+    },
+  ];
+
+  const templatesById = Object.fromEntries(templates.map((t) => [t.id, t]));
+
+  const buildSessionFromTemplate = (params: {
+    id: string;
+    templateId: string;
+    dateISO: string;
+    startTime: string;
+    endTime: string;
+    status: WorkoutSessionStatus;
+    weightShiftKg?: number;
+  }): WorkoutSession => {
+    const tpl = templatesById[params.templateId];
+    const exList = templateExercisesToSessionExercises(tpl.exercises).map((ex) => {
+      if (params.status === WorkoutSessionStatus.COMPLETED) {
+        return {
+          ...ex,
+          isCompleted: true,
+          sets: ex.sets.map((s) => ({
+            ...s,
+            actualWeightKg:
+              s.targetWeightKg !== undefined
+                ? Math.max(0, s.targetWeightKg + (params.weightShiftKg ?? 0))
+                : undefined,
+            isCompleted: true,
+          })),
+        };
+      }
+      return ex;
+    });
+
+    return {
+      id: params.id,
+      programId: tpl.programId,
+      templateId: tpl.id,
+      title: tpl.title,
+      type: tpl.type,
+      dateISO: params.dateISO,
+      dayIndex: getPersianDayIndexFromISO(params.dateISO),
+      startTime: params.startTime,
+      endTime: params.endTime,
+      estimatedDurationMinutes: tpl.estimatedDurationMinutes,
+      status: params.status,
+      reminderEnabled: true,
+      exercises: exList,
+      createdAt: nowISO,
+      updatedAt: nowISO,
+    };
+  };
+
+  // Previous week (2 completed, 1 missed) + Current week (2 completed, 1 missed, 1 planned today/tomorrow) + Next week (3 planned)
+  const sessions: WorkoutSession[] = [
+    // Previous week
+    buildSessionFromTemplate({
+      id: 'ws_prev_sat',
+      templateId: 'wtpl_upper_1',
+      dateISO: prevWeekStart,
+      startTime: '17:30',
+      endTime: '18:15',
+      status: WorkoutSessionStatus.COMPLETED,
+      weightShiftKg: -2,
+    }),
+    buildSessionFromTemplate({
+      id: 'ws_prev_mon',
+      templateId: 'wtpl_lower_2',
+      dateISO: addDaysToISO(prevWeekStart, 2),
+      startTime: '18:00',
+      endTime: '18:50',
+      status: WorkoutSessionStatus.COMPLETED,
+      weightShiftKg: -2.5,
+    }),
+    buildSessionFromTemplate({
+      id: 'ws_prev_wed',
+      templateId: 'wtpl_cardio_steady',
+      dateISO: addDaysToISO(prevWeekStart, 4),
+      startTime: '08:00',
+      endTime: '08:35',
+      status: WorkoutSessionStatus.MISSED,
+    }),
+
+    // Current week (Saturday 2026-11-14 .. Friday 2026-11-20; refISO is Thursday 2026-11-19)
+    buildSessionFromTemplate({
+      id: 'ws_cur_sat',
+      templateId: 'wtpl_upper_1',
+      dateISO: currentWeek.dayDatesISO[0],
+      startTime: '17:30',
+      endTime: '18:15',
+      status: WorkoutSessionStatus.COMPLETED,
+      weightShiftKg: 0,
+    }),
+    buildSessionFromTemplate({
+      id: 'ws_cur_sun',
+      templateId: 'wtpl_morning_mob',
+      dateISO: currentWeek.dayDatesISO[1],
+      startTime: '07:30',
+      endTime: '07:50',
+      status: WorkoutSessionStatus.COMPLETED,
+    }),
+    buildSessionFromTemplate({
+      id: 'ws_cur_mon',
+      templateId: 'wtpl_lower_2',
+      dateISO: currentWeek.dayDatesISO[2],
+      startTime: '18:00',
+      endTime: '18:50',
+      status: WorkoutSessionStatus.COMPLETED,
+      weightShiftKg: 0,
+    }),
+    buildSessionFromTemplate({
+      id: 'ws_cur_tue',
+      templateId: 'wtpl_cardio_steady',
+      dateISO: currentWeek.dayDatesISO[3],
+      startTime: '19:00',
+      endTime: '19:35',
+      status: WorkoutSessionStatus.MISSED,
+    }),
+    buildSessionFromTemplate({
+      id: 'ws_cur_thu',
+      templateId: 'wtpl_full_cardio_3',
+      dateISO: currentWeek.dayDatesISO[5], // Thursday 2026-11-19 (Today)
+      startTime: '18:00',
+      endTime: '18:40',
+      status: WorkoutSessionStatus.PLANNED,
+    }),
+    buildSessionFromTemplate({
+      id: 'ws_cur_fri',
+      templateId: 'wtpl_morning_mob',
+      dateISO: currentWeek.dayDatesISO[6], // Friday
+      startTime: '09:00',
+      endTime: '09:20',
+      status: WorkoutSessionStatus.CANCELLED,
+    }),
+
+    // Next week (Saturday 2026-11-21 .. Friday 2026-11-27)
+    buildSessionFromTemplate({
+      id: 'ws_next_sat',
+      templateId: 'wtpl_upper_1',
+      dateISO: nextWeek.dayDatesISO[0],
+      startTime: '17:30',
+      endTime: '18:15',
+      status: WorkoutSessionStatus.PLANNED,
+    }),
+    buildSessionFromTemplate({
+      id: 'ws_next_mon',
+      templateId: 'wtpl_lower_2',
+      dateISO: nextWeek.dayDatesISO[2],
+      startTime: '18:00',
+      endTime: '18:50',
+      status: WorkoutSessionStatus.PLANNED,
+    }),
+    buildSessionFromTemplate({
+      id: 'ws_next_wed',
+      templateId: 'wtpl_full_cardio_3',
+      dateISO: nextWeek.dayDatesISO[4],
+      startTime: '17:45',
+      endTime: '18:25',
+      status: WorkoutSessionStatus.PLANNED,
+    }),
+  ];
+
+  // Build activity logs for all COMPLETED sessions
+  const defaultProfileWeightKg = 62;
+  const activityLogs: WorkoutActivityLog[] = sessions
+    .filter((s) => s.status === WorkoutSessionStatus.COMPLETED)
+    .map((s) => {
+      const calEstimate = estimateWorkoutSessionCalories({
+        weightKg: defaultProfileWeightKg,
+        totalDurationMinutes: s.estimatedDurationMinutes,
+        exercises: s.exercises,
+        exercisesById,
+        metReferenceTable: DEFAULT_MET_REFERENCE_TABLE,
+        sessionFallbackType: s.type,
+      });
+
+      const totalSets = s.exercises.reduce((acc, ex) => acc + ex.sets.length, 0);
+      const completedSets = s.exercises.reduce(
+        (acc, ex) => acc + ex.sets.filter((st) => st.isCompleted).length,
+        0
+      );
+
+      return {
+        id: `wlog_${s.id}`,
+        sessionId: s.id,
+        programId: s.programId,
+        templateId: s.templateId,
+        title: s.title,
+        type: s.type,
+        dateISO: s.dateISO,
+        startedAtISO: `${s.dateISO}T${s.startTime}:00+03:30`,
+        endedAtISO: `${s.dateISO}T${s.endTime}:00+03:30`,
+        pauseIntervals: [],
+        actualDurationMinutes: s.estimatedDurationMinutes,
+        estimatedCalories: calEstimate.totalCalories,
+        caloriesFormulaNote: 'محاسبه تخمینی بر اساس MET × 3.5 × وزن ÷ 200 × مدت (دقیقه)',
+        completedExercisesCount: s.exercises.length,
+        totalExercisesCount: s.exercises.length,
+        completedSetsCount: completedSets,
+        totalSetsCount: totalSets,
+        perceivedRpe: 7,
+        userNotes: 'تمرین با تمرکز بر کنترل حرکت و ریتم تنفس انجام شد.',
+        exercisesSnapshot: structuredClone(s.exercises),
+        status: 'COMPLETED',
+        updatedAt: nowISO,
+      };
+    });
+
+  const workoutPreferences: WorkoutPreferences = {
+    primaryGoal: WorkoutGoal.MUSCLE_GAIN,
+    experienceLevel: DifficultyLevel.INTERMEDIATE,
+    preferredSessionsPerWeek: 3,
+    preferredDurationMinutes: 45,
+    preferredDays: [0, 2, 4], // شنبه، دوشنبه، چهارشنبه
+    preferredTimeStart: '17:30',
+    preferredTimeEnd: '19:30',
+    favoriteTypes: [ExerciseType.STRENGTH, ExerciseType.CARDIO],
+    availableEquipment: ['دمبل', 'هالتر', 'دستگاه سیم‌کش', 'مت ورزشی', 'تردمیل'],
+    movementLimitations: 'حساسیت خفیف در زانوی چپ هنگام پرش‌های سنگین',
+    personalNotes: 'ترجیح می‌دهم جلسات قدرتی با ۱۰ دقیقه کشش پایان یابند.',
+    updatedAt: nowISO,
+  };
+
+  return {
+    exerciseCategories: MOCK_EXERCISE_CATEGORIES,
+    exercises,
+    metReferenceTable: DEFAULT_MET_REFERENCE_TABLE,
+    workoutPrograms: programs,
+    workoutTemplates: templates,
+    workoutSessions: sessions,
+    workoutActivityLogs: activityLogs,
+    workoutPreferences,
+  };
+}
